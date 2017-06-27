@@ -149,7 +149,8 @@
 (defmethod update-dependent ((object (eql #'allocate-instance))
                              (dependent allocator-cell)
                              &rest args)
-  (destructuring-bind (key method) args
+  (destructuring-bind (&optional key method &rest more) args
+    (declare (ignore more))
     (case (allocator-cell-state dependent)
       ((:optimized)
        (when (and (eq key 'cl:add-method)

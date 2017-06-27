@@ -277,7 +277,7 @@
                              &rest args)
   ;; I actually don't think a programmer can make an initarg valid by having it
   ;; as a &key to make-instance. But I'm not sure. Better safe than sorry.
-  (destructuring-bind (key method &rest more) args
+  (destructuring-bind (&optional key method &rest more) args
     (declare (ignore more))
     (when (and (find key '(cl:add-method cl:remove-method))
                (method-may-specialize-p
@@ -288,7 +288,7 @@
 (defmethod update-dependent ((object (eql #'initialize-instance))
                              (cell constructor-cell)
                              &rest args)
-  (destructuring-bind (key method &rest more) args
+  (destructuring-bind (&optional key method &rest more) args
     (declare (ignore more))
     (when (and (find key '(cl:add-method cl:remove-method))
                (method-may-specialize-using-classes-p
@@ -299,7 +299,7 @@
 (defmethod update-dependent ((object (eql #'shared-initialize))
                              (cell constructor-cell)
                              &rest args)
-  (destructuring-bind (key method &rest more) args
+  (destructuring-bind (&optional key method &rest more) args
     (declare (ignore more))
     (when (and (find key '(cl:add-method cl:remove-method))
                (method-may-specialize-using-classes-p
@@ -311,7 +311,7 @@
 (defmethod update-dependent ((object (eql #'allocate-instance))
                              (cell constructor-cell)
                              &rest args)
-  (destructuring-bind (key method &rest more) args
+  (destructuring-bind (&optional key method &rest more) args
     (declare (ignore more))
     (when (and (find key '(cl:add-method cl:remove-method))
                (method-may-specialize-p
