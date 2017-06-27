@@ -65,10 +65,9 @@
                  when (and (initializing-slotd-p slotd) initfunction)
                    collect `(unless (slot-boundp-using-class ,class ,instance ,slotd)
                               (setf (slot-value-using-class ,class ,instance ,slotd)
-                                  (funcall (the function
-                                                ;; again, note that including a function
-                                                ;; prevents this form from being dumped.
-                                                ,(slot-definition-initfunction slotd))))))
+                                    ;; Note that putting a literal function in
+                                    ;; prevents dumping.
+                                    (funcall (the function ,initfunction)))))
          ,instance))))
 
 (defun keys-to-slotds (class initkeys variables)
