@@ -104,6 +104,7 @@
 
 (defun start-constructor-cell-updates (cell)
   (add-dependent (constructor-cell-class cell) cell)
+  (add-slots-dependency (constructor-cell-class cell) cell #'update-constructor-cell)
   (add-dependent #'make-instance cell)
   (add-dependent #'initialize-instance cell)
   (add-dependent #'shared-initialize cell)

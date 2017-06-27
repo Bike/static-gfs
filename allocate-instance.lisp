@@ -54,6 +54,7 @@
 
 (defun start-allocator-cell-updates (cell)
   (add-dependent (allocator-cell-class cell) cell)
+  (add-slots-dependency (allocator-cell-class cell) cell #'update-allocator-cell)
   (add-dependent #'allocate-instance cell))
 
 (defun update-allocator-cell (cell)
@@ -153,7 +154,7 @@
     (declare (ignore more))
     (case (allocator-cell-state dependent)
       ((:optimized)
-       (when (and (eq key 'cl:add-method)
+       (when (and (find key '(cl:add-method cl:remove-method))
                   (method-may-specialize-p
                    method (list (allocator-cell-class dependent))))
          (update-allocator-cell dependent)))

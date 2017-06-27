@@ -129,3 +129,28 @@
          (if ,p
              ,v
              (setf (gethash ,k ,h) ,default))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; I wanted to just use UPDATE-DEPENDENTS, but it turns out that it's not called
+;;; on a class that has just had a superclass reinitialized, even though this
+;;; changes the effective slots. Annoying.
+
+;;; This is technically nonconformant because it defines a method that can apply
+;;; to direct instances of standard-class.
+
+;;; Also it sucks.
+
+(defun add-slots-dependency (class cell function)
+  (defmethod compute-slots :after ((class (eql class)))
+    (funcall function cell)))
+
+(defun remove-slots-dependency (class cell)
+  (declare (ignore cell))
+  (let ((method (find-method #'compute-slots '(:after)
+                             (list (intern-eql-specializer class))
+                             nil)))
+    (when method
+      (remove-method #'compute-slots method))))
+
+
