@@ -12,8 +12,7 @@
 
 (define-compiler-macro allocate-instance (&whole form class &rest initargs)
   (if (constantp class)
-      (let ((class (eval class))
-            (cell (gensym "ALLOCATOR-CELL")))
+      (let ((cell (gensym "ALLOCATOR-CELL")))
         `(let ((,cell (load-time-value (ensure-allocator ,class))))
            (funcall (the function (allocator-cell-function ,cell))
                     ,@initargs)))
@@ -30,30 +29,25 @@
                                              &rest initargs &environment env)
   (if (constantp class)
       (let ((class (eval class)))
-        (typecase class
-          (symbol
-           ;; this should descend back into this macro, but now with a class.
-           (let ((class (find-class class nil env)))
-             (if class
-                 `(make-instance ,class ,@initargs)
-                 form)))
-          (class
-           (multiple-value-bind
-                 (canon-keys canon-values bindings decls aok-p success)
-               (constant-kwargs initargs env)
-             (if success
-                 (let ((cell (gensym "CONSTRUCTOR-CELL")))
-                   `(let ((,cell (load-time-value
-                                  (ensure-constructor
-                                   ,class
-                                   '(,@canon-keys)
-                                   ',aok-p))))
-                      (let (,@bindings)
-                        (declare ,@decls)
-                        (funcall (the function (constructor-cell-function ,cell))
-                                 ,@canon-values))))
-                 form)))
-          (t ;; dunno what it is, punt
-           form)))
+        (multiple-value-bind
+              (canon-keys canon-values bindings decls aok-p success)
+            (constant-kwargs initargs env)
+          (if success
+              (let ((cell (gensym "CONSTRUCTOR-CELL")))
+                `(let ((,cell
+                         ,(typecase class
+                            (symbol `(ensure-constructor (find-class ',class)
+                                                         '(,@canon-keys)
+                                                         ',aok-p))
+                            (class `(load-time-value
+                                     (ensure-constructor ,class
+                                                         '(,@canon-keys)
+                                                         ',aok-p)))
+                            (t (return-from make-instance form)))))
+                 (let (,@bindings)
+                   (declare ,@decls)
+                   (funcall (the function (constructor-cell-function ,cell))
+                            ,@canon-values))))
+            form)))
       ;; class is not constant, punt
       form))
