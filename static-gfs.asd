@@ -3,7 +3,7 @@
   :author "Bike <aeshtaer@gmail.com>"
   :version "0.5"
   :license "WTFPL"
-  :depends-on ((:feature (not clasp) alexandria))
+  :depends-on ((:feature (:not :clasp) alexandria))
   :components ((:file "packages")
                (:file "util" :depends-on ("packages"))
                (:file "emf" :depends-on ("packages"))
