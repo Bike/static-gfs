@@ -2,8 +2,7 @@
   :description "Optimize MAKE-INSTANCE and such with call site caches."
   :author "Bike <aeshtaer@gmail.com>"
   :version "0.5"
-  :license "WTFPL"
-  :depends-on ((:feature (:not :clasp) alexandria))
+  :license "CC0"
   :components ((:file "packages")
                (:file "util" :depends-on ("packages"))
                (:file "emf" :depends-on ("packages"))
