@@ -70,8 +70,8 @@
 ;;; 5) Whether :allow-other-keys with a true value is in place.
 ;;; 6) success-p.
 ;;; Useful for eliminating calls with &key. Example output:
-;;; (:foo 4 'bar 7) => (bar #:g1 :foo #:g2), ((#:g1 7) (#:g2 4)), nil, nil, T
-;;; (:foo 1 :foo 2) => (:foo #:g3), ((#:g3 1) (#:g4 2)), (ignore #:g4), nil, T
+;;; (:foo 4 'bar 7) => (:foo bar), (#:g2 #:g1), ((#:g1 7) (#:g2 4)), nil, nil, T
+;;; (:foo 1 :foo 2) => (:foo), (#:g1), ((#:g1 1) (#:g2 2)), ((ignore #:g1)), nil, T
 ;;; (a 1) => NIL, NIL, NIL, NIL, NIL, NIL ; non-constant keyword
 
 ;;; Originally I was going to have this reorder the key args, but per 7.1.4
