@@ -30,6 +30,7 @@
           finally (return t))))
 
 ;;; Second value is whether we need the arguments as a list (i.e. args-name)
+;;; THis is the case when we need to call some user method function.
 ;;; KLUDGE, ideally we would just bind the list and then the compiler would
 ;;; eliminate it if it wasn't used. But that's tricky since consing can be
 ;;; considered a side effect.
@@ -63,7 +64,4 @@
 ;;; per MOP, standard method functions should take args and next-methods
 ;;; as two normal arguments
 (defmacro invoke-method (method args &optional next-methods)
-  #+clasp
-  `(apply (the function ,(method-function method)) ,args ,next-methods ,args)
-  #-(or clasp)
   `(funcall (the function ,(method-function method)) ,args ,next-methods))
