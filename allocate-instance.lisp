@@ -17,8 +17,10 @@
 (defstruct (allocator-cell
              (:constructor make-allocator-cell
                            (class &optional function)))
-  function class
-  (state nil :type (member nil :optimized :fallback :built-in-class)))
+  (function (compute-fallback-allocate-instance class)
+   :type function)
+  class
+  (state :fallback :type (member :optimized :fallback :built-in-class)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -45,12 +47,15 @@
 ;;; Cell creation and updating.
 
 (defun ensure-allocator (class)
-  (ensure-class-allocator-cell
-   class
-   (let ((cell (make-allocator-cell class)))
-     (update-allocator-cell cell)
-     (start-allocator-cell-updates cell)
-     cell)))
+  (multiple-value-bind (cell present-p)
+      (class-allocator-cell class)
+    (if present-p
+        cell
+        (let ((cell (make-allocator-cell class)))
+          ;; See long comment in ensure-constructor for why we order like this.
+          (prog1 (setf (class-allocator-cell class) cell)
+            (update-allocator-cell cell)
+            (start-allocator-cell-updates cell))))))
 
 (defun start-allocator-cell-updates (cell)
   (add-dependent (allocator-cell-class cell) cell)
@@ -70,9 +75,7 @@
     (typecase class
       (standard-class
        (if (can-optimize-allocate-instance-p
-            ;; i think clasp is actually wrong here. probably related to lack of
-            ;; distinct funcallable instances. or something. maybe.
-            applicable-methods (find-class #+clasp 'class #-clasp 'standard-class))
+            applicable-methods (find-class 'standard-class))
            (values :optimized (compute-allocate-standard-instance class applicable-methods))
            (values :fallback (compute-fallback-allocate-instance class))))
       (funcallable-standard-class
@@ -109,12 +112,7 @@
 (defun allocate-standard-instance-form (class)
   #+clasp
   (let ((size (clos::class-size class)))
-    `(let ((new (,(if (clos::subclassp class (find-class 'class))
-                      'core:allocate-raw-class
-                      'core:allocate-raw-instance)
-                  nil ,class ,size)))
-       (si::instance-sig-set new)
-       new))
+    `(core:allocate-new-instance ,class ,size))
   #-(or clasp)
   (progn (warn "Don't know how to optimize ALLOCATE-INSTANCE of a standard class!")
          `(funcall ,(compute-fallback-allocate-instance class))))
@@ -130,7 +128,10 @@
                    initargs)))))
 
 (defun allocate-funcallable-standard-instance-form (class)
-  #-(or)
+  #+clasp
+  (let ((size (clos::class-size class)))
+    `(core:allocate-new-funcallable-instance ,class ,size))
+  #-(or clasp)
   (progn (warn "Don't know how to optimize ALLOCATE-INSTANCE of a funcallable standard class!")
          `(funcall ,(compute-fallback-allocate-instance class))))
 
@@ -138,6 +139,9 @@
   (lambda (&key &allow-other-keys)
     (error "~s called on ~s, a ~s" 'allocate-instance class 'built-in-class)))
 
+;;; For circularity purposes, it is important that this function not do anything
+;;; complicated, including recursively. Immediately returning a closure is a
+;;; good example of nothing complicated.
 (defun compute-fallback-allocate-instance (class)
   (lambda (&rest initargs &key &allow-other-keys)
     (declare (notinline allocate-instance))
