@@ -19,8 +19,6 @@
 
 ;;; So the constructor has to take care of default initargs.
 
-;;; FIXME: Only does any good if there are no applicable custom methods on MAKE-INSTANCE.
-;;;        If there are such methods it will make calls a little worse.
 ;;; FIXME: Not thread safe.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -33,19 +31,20 @@
 (defstruct (constructor-cell
             (:constructor make-constructor-cell
                 (class initkeys allow-other-keys-p &optional function)))
-  function class initkeys
+  (function (no-compile-fallback-constructor class initkeys)
+   :type function)
+  class initkeys
   ;; this boolean is true iff the call has :allow-other-keys true.
   ;; It's rare, but does mean we don't need to do initargs checking.
   allow-other-keys-p
-  ;; NIL is only the state while the cell is first being created.
-  ;; Kind of kludgey?
   ;; STATE is only used, anyway, for :wait-finalize. The idea is that the updaters
   ;; (i.e. update-dependent) could be fine-grained and only work based on the state.
   ;; But we don't do that. Knowing the state can be nice for debug, though.
-  (state nil :type (member nil
-                           :bad-initargs :wait-finalize :fallback-make-instance
-                           :fallback-initialize-instance
-                           :fallback-shared-initialize :optimized-shared-initialize)))
+  (state :no-compile-fallback
+   :type (member :no-compile-fallback
+                 :bad-initargs :wait-finalize :fallback-make-instance
+                 :fallback-initialize-instance
+                 :fallback-shared-initialize :optimized-shared-initialize)))
 
 (defmethod print-object ((o constructor-cell) s)
   (if *print-readably*
@@ -93,14 +92,26 @@
 (defun ensure-constructor (class initkeys aok-p)
   ;; grab an existing cell if there is one; otherwise make a new cell
   ;; and compute a constructor to put in it.
-  (ensure-gethash (list* aok-p initkeys) (ensure-class-constructor-table class)
-                  (let ((cell (make-constructor-cell class initkeys aok-p)))
-                    ;; These two forms should be locked together, because if
-                    ;; a relevant method is redefined during their execution,
-                    ;; it won't catch it and there will be problems.
-                    (update-constructor-cell cell)
-                    (start-constructor-cell-updates cell)
-                    cell)))
+  (let ((key (list* aok-p initkeys))
+        (table (ensure-class-constructor-table class)))
+    (multiple-value-bind (cell present-p)
+        (gethash key table)
+      (if present-p
+          cell
+          ;; Originally this was a simple ensure-gethash.
+          ;; However, the possibility of a compiler using this library is one
+          ;; that should be supported. And if that's done, it's easy to run into
+          ;; circularity issues: the compiler might try to optimize a make-instance,
+          ;; thus calling itself, and then that compilation tries to do the same...
+          ;; To avoid this we set the cell in place immediately, so that recursive
+          ;; calls to ensure a constructor with this pattern will find something.
+          ;; So it's important that make-constructor-cell (and setf gethash) can
+          ;; not call ensure-constructor, possibly recursively.
+          ;; This is what no-compile-fallback-constructor is for.
+          (let ((cell (make-constructor-cell class initkeys aok-p)))
+            (prog1 (setf (gethash key table) cell)
+              (update-constructor-cell cell)
+              (start-constructor-cell-updates cell)))))))
 
 (defun start-constructor-cell-updates (cell)
   (add-dependent (constructor-cell-class cell) cell)
@@ -244,6 +255,18 @@
        (update-constructor-cell-finalized cell)
        (apply (constructor-cell-function cell) values)))))
 
+;;; For circularity purposes, it is important that this function not do anything
+;;; complicated, including recursively. Immediately returning a closure is a
+;;; good example of nothing complicated.
+;;; The closure is only used temporarily, if at all, so it's ok that it sucks.
+(defun no-compile-fallback-constructor (class initkeys)
+  (lambda (&rest values)
+    (declare (notinline make-instance))
+    (apply #'make-instance
+           class
+           (loop for k in initkeys for v in values
+                 collect k collect v))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Updaters for redefinition.
@@ -270,7 +293,6 @@
                (method-may-specialize-p
                 method (list (constructor-cell-class cell))))
       (unless (eq (constructor-cell-state cell) :wait-finalize)
-        (print "really doing it")
         (update-constructor-cell-finalized cell)))))
 
 (defmethod update-dependent ((object (eql #'make-instance))
@@ -366,15 +388,7 @@
                               #'initialize-instance (list (class-prototype class)))
                              (compute-applicable-methods
                               #'shared-initialize (list (class-prototype class) t)))
-        for keywords = (method-keywords method)
-        when (eq keywords t) ; &allow-other-keys
-          return t
-        append keywords))
-
-#-(or clasp)
-(defun method-keywords (method)
-  (multiple-value-bind (required optional rest keys aok-p aux key)
-      (alexandria:parse-ordinary-lambda-list (method-lambda-list method))
-    (declare (ignore required optional rest aux key))
-    ;; Keys are normalized to ((keyword parameter-name) initform suppliedp-name)
-    (if aok-p t (mapcar #'caar keys))))
+        append (multiple-value-bind (keywords aok-p)
+                   (function-keywords method)
+                 (when aok-p (return t))
+                 keywords)))
