@@ -31,7 +31,7 @@
 (defstruct (constructor-cell
             (:constructor make-constructor-cell
                 (class-or-name initkeys allow-other-keys-p &optional function)))
-  (function (no-compile-fallback-constructor class initkeys)
+  (function (no-compile-fallback-constructor class-or-name initkeys)
    :type function)
   class-or-name initkeys
   ;; this boolean is true iff the call has :allow-other-keys true.
@@ -55,6 +55,7 @@
           (or class
               (error "BUG: Constructor cell ~a expected to name a class here!" instance)))
         thing))
+  #-named-constructor-cells
   (constructor-cell-class-or-name instance))
 
 (defmethod print-object ((o constructor-cell) s)
@@ -133,13 +134,13 @@
   (add-dependent #'allocate-instance cell))
 
 (defun update-constructor-cell (cell)
-  (let (#+named-constructor-cells
-        (class-or-name (constructor-cell-class-or-name cell))
-        (class #+named-constructor-cells
-               (if (symbolp class-or-name)
-                   (find-class class-or-name nil)
-                   class-or-name)
-               #-named-constructor-cells (constructor-cell-class cell)))
+  (let* (#+named-constructor-cells
+         (class-or-name (constructor-cell-class-or-name cell))
+         (class #+named-constructor-cells
+                (if (symbolp class-or-name)
+                    (find-class class-or-name nil)
+                    class-or-name)
+                #-named-constructor-cells (constructor-cell-class cell)))
     (setf (values (constructor-cell-state cell)
                   (constructor-cell-function cell))
           (cond #+named-constructor-cells
@@ -268,7 +269,7 @@
      (declare (ignore values))
      ;; Trigger whatever error FIND-CLASS does.
      (find-class name t)
-     (error "BUG: Constructor cell ~a expected not to name a class here!" instance))))
+     (error "BUG: Constructor cell for ~a expected not to name a class here!" name))))
 
 (defun compute-finalizer (cell)
   ;; This is somewhat unusual as functions go, because it triggers an update.
@@ -385,7 +386,7 @@
 #+named-constructor-cells
 (defun update-for-setf-find-class (name)
   (multiple-value-bind (table presentp)
-      (gethash class-or-name *constructor-tables*)
+      (gethash name *constructor-tables*)
     (if presentp
         (maphash (lambda (initargs cell)
                    (declare (ignore initargs))
