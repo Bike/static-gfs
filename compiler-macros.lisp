@@ -22,9 +22,6 @@
 ;;;
 ;;; MAKE-INSTANCE
 
-;;; CLHS 11.1.2.1.2 19 forbids the user from a make-instance method specializing
-;;; on any type of symbol, so we can skip that method even if we can't optimize.
-
 (define-compiler-macro make-instance (&whole form class
                                              &rest initargs &environment env)
   (if (constantp class)
@@ -36,13 +33,15 @@
               (let ((cell (gensym "CONSTRUCTOR-CELL")))
                 `(let ((,cell
                          ,(typecase class
+                            #-named-constructor-cells
                             (symbol `(ensure-constructor (find-class ',class)
                                                          '(,@canon-keys)
                                                          ',aok-p))
-                            (class `(load-time-value
-                                     (ensure-constructor ,class
-                                                         '(,@canon-keys)
-                                                         ',aok-p)))
+                            ((or class #+named-constructor-cells symbol)
+                             `(load-time-value
+                               (ensure-constructor ,class
+                                                   '(,@canon-keys)
+                                                   ',aok-p)))
                             (t (return-from make-instance form)))))
                    (let (,@bindings)
                      (declare ,@decls)

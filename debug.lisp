@@ -39,12 +39,25 @@
 ;;; only change again if you force it to or restart updates with
 ;;; START-CONSTRUCTOR-CELL-UPDATES.
 ;;; It is possible to break things this way, if the function isn't a full call.
+;;; (I.e., you can freeze, then redefine slots or something.)
+;;; Also: Won't work on named-constructor-cells yet :( FIXME?
 (defun stop-constructor-cell-updates (cell)
   (remove-dependent (constructor-cell-class cell) cell)
   (remove-dependent #'make-instance cell)
   (remove-dependent #'initialize-instance cell)
   (remove-dependent #'shared-initialize cell)
   (remove-dependent #'allocate-instance cell))
+
+;;; FIXME: duplicates update-for-setf-find-class
+(defun map-constructor-cells (class-or-name function)
+  (multiple-value-bind (table presentp)
+      (gethash class-or-name *constructor-tables*)
+    (if presentp
+        (maphash (lambda (initargs cell)
+                   (declare (ignore initargs))
+                   (funcall function cell))
+                 table)
+        nil)))
 
 (defun map-all-constructor-cells (function)
   (maphash

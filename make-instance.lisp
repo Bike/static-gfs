@@ -30,10 +30,10 @@
 ;;; We need the other slots for reacting to redefinitions.
 (defstruct (constructor-cell
             (:constructor make-constructor-cell
-                (class initkeys allow-other-keys-p &optional function)))
+                (class-or-name initkeys allow-other-keys-p &optional function)))
   (function (no-compile-fallback-constructor class initkeys)
    :type function)
-  class initkeys
+  class-or-name initkeys
   ;; this boolean is true iff the call has :allow-other-keys true.
   ;; It's rare, but does mean we don't need to do initargs checking.
   allow-other-keys-p
@@ -41,10 +41,21 @@
   ;; (i.e. update-dependent) could be fine-grained and only work based on the state.
   ;; But we don't do that. Knowing the state can be nice for debug, though.
   (state :no-compile-fallback
-   :type (member :no-compile-fallback
+   :type (member :no-compile-fallback #+named-constructor-cells :no-referent
                  :bad-initargs :wait-finalize :fallback-make-instance
                  :fallback-initialize-instance
                  :fallback-shared-initialize :optimized-shared-initialize)))
+
+(defun constructor-cell-class (instance)
+  (declare (type constructor-cell instance))
+  #+named-constructor-cells
+  (let ((thing (constructor-cell-class-or-name instance)))
+    (if (symbolp thing)
+        (let ((class (find-class thing nil)))
+          (or class
+              (error "BUG: Constructor cell ~a expected to name a class here!" instance)))
+        thing))
+  (constructor-cell-class-or-name instance))
 
 (defmethod print-object ((o constructor-cell) s)
   (if *print-readably*
@@ -122,10 +133,18 @@
   (add-dependent #'allocate-instance cell))
 
 (defun update-constructor-cell (cell)
-  (let ((class (constructor-cell-class cell)))
+  (let (#+named-constructor-cells
+        (class-or-name (constructor-cell-class-or-name cell))
+        (class #+named-constructor-cells
+               (if (symbolp class-or-name)
+                   (find-class class-or-name nil)
+                   class-or-name)
+               #-named-constructor-cells (constructor-cell-class cell)))
     (setf (values (constructor-cell-state cell)
                   (constructor-cell-function cell))
-          (cond ((not (class-finalized-p class))
+          (cond #+named-constructor-cells
+                ((null class) (compute-no-referent class-or-name))
+                ((not (class-finalized-p class))
                  ;; If a class isn't finalized we can't do much of anything, since we
                  ;; don't know its slots and therefore its initargs.
                  ;; But a class has to be finalized before make-instance can complete,
@@ -240,6 +259,17 @@
      (error "Unknown initialization arguments for ~s: ~s"
             (class-name class) invalid-keys))))
 
+#+named-constructor-cells
+(defun compute-no-referent (name)
+  ;; This is the "constructor" used for (make-instance 'foo ...) while FOO is unbound to a class.
+  (values
+   :no-referent
+   (lambda (&rest values)
+     (declare (ignore values))
+     ;; Trigger whatever error FIND-CLASS does.
+     (find-class name t)
+     (error "BUG: Constructor cell ~a expected not to name a class here!" instance))))
+
 (defun compute-finalizer (cell)
   ;; This is somewhat unusual as functions go, because it triggers an update.
   ;; (We can't just force finalization when the class is redefined, because
@@ -351,6 +381,17 @@
   (declare (ignore args))
   ;; class may no longer be initialized, start over.
   (update-constructor-cell dependent))
+
+#+named-constructor-cells
+(defun update-for-setf-find-class (name)
+  (multiple-value-bind (table presentp)
+      (gethash class-or-name *constructor-tables*)
+    (if presentp
+        (maphash (lambda (initargs cell)
+                   (declare (ignore initargs))
+                   (update-constructor-cell cell))
+                 table)
+        nil)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
