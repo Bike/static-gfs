@@ -39,7 +39,7 @@
                                                          ',aok-p))
                             ((or class #+named-constructor-cells symbol)
                              `(load-time-value
-                               (ensure-constructor ,class
+                               (ensure-constructor ',class
                                                    '(,@canon-keys)
                                                    ',aok-p)))
                             (t (return-from make-instance form)))))
